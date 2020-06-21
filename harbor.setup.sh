@@ -34,6 +34,7 @@ if [ ! -f ${HARBOR_BASE}/harbor.yml.tmpl ]; then
    echo "Harbor dir has not template ${HARBOR_BASE}/harbor.yml"; exit 2;
 fi
 
+### update docker-composee to latest , harbor need that (if installed from apt-get remove it first)
 DOCKER_COMPOSER_GIT_VERSION=$(curl --silent https://api.github.com/repos/docker/compose/releases/latest | jq .name -r)
 DOCKER_COMPOSER_LOCAL_VER=$(/usr/local/bin/docker-compose --version)
 DESTINATION=/usr/local/bin/docker-compose
@@ -43,7 +44,8 @@ if [[ $DOCKER_COMPOSER_LOCAL_VER != *"${DOCKER_COMPOSER_GIT_VERSION}"* ]]; then
   sudo chmod 755 $DESTINATION
 fi
 
-
+##### cert for harbor and docker
+#####
 cat > v3.ext <<-EOF
 authorityKeyIdentifier=keyid,issuer
 basicConstraints=CA:FALSE
@@ -88,8 +90,8 @@ if [ ! -f ${LOCAL}.crt ]; then
   echo "failed create ${LOCAL}.crt"; exit 2;
 fi
 
-
 ### copy cert for harbor
+### I use default path /data and /data/cert
 if [[ -d $HARBOR_CERT ]]; then
        echo "Regenerating certs";
        rm -rf $HARBOR_CERT;
@@ -112,6 +114,7 @@ if [ ! -f $KEY_PATH ]; then
   echo "failed copy $KEY_PATH"; exit 2;
 fi
 
+## copy ca and signed key to docker
 openssl x509 -inform PEM -in ${LOCAL}.crt -out ${LOCAL}.cert
 DOCKER_CERT_DIR=${DOCKER_CERT}/${LOCAL}
 
@@ -128,10 +131,12 @@ cp ${LOCAL}.key $DOCKER_CERT_DIR/
 cp ${LOCAL}.cert $DOCKER_CERT_DIR/ 
 cp ca.crt $DOCKER_CERT_DIR/
 
+# restart
 service docker restart
 DOCKER_RUNNING=$(systemctl is-active --quiet service)
 [[ ! -z "$DOCKER_RUNNING" ]] && { echo "Error: failed restart docker."; exit 1; }
 
+# install harbor, it regenerate config each time
 echo "Installing Harbor";
 ${HARBOR_BASE}/.harbor.yml.tmpl $HARBOR_BASE/harbor.yml
 sed -i '/certificate/s/${DOCKER_CERT_FILE}/}/g' HARBOR_BASE/harbor.yml 
